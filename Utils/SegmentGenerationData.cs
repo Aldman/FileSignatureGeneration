@@ -1,8 +1,8 @@
-﻿namespace FileSignatureGeneration;
+﻿namespace FileSignatureGeneration.Utils;
 
-public class SegmentGenerationData
+internal class SegmentGenerationData
 {
-    public string FilePath { get; private set; }
+    private string FilePath { get; init; }
     
     public long SegmentSizeInBytes { get; private set; }
     

@@ -1,6 +1,6 @@
-﻿namespace FileSignatureGeneration;
+﻿namespace FileSignatureGeneration.Utils;
 
-public class ConsoleDataGetter
+internal static class ConsoleDataGetter
 {
     public static string FilePath
     {
