@@ -6,7 +6,7 @@ namespace FileSignatureGeneration
     {
         public static void Main()
         {
-            var data = SegmentGenerationData.GetData();
+            var data = SegmentGenerationData.GetInputDataFromUser();
             SegmentGenerator.RunSegmentGeneration(data);
         }
     }
