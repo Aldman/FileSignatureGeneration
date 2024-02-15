@@ -10,7 +10,7 @@ internal static class SegmentGenerator
     {
         using var fileStream = data.FileStream.Value;
         var segmentSizeInBytes = data.SegmentSizeInBytes;
-        
+
         var threadList = new List<Thread>();
         RunSegmentGenerationInThreads(fileStream, threadList, segmentSizeInBytes);
 
@@ -21,54 +21,68 @@ internal static class SegmentGenerator
 
         Console.WriteLine("Программа завершена");
     }
-    
+
     private static void RunSegmentGenerationInThreads(FileStream fileStream,
         List<Thread> threadList, long segmentSizeInBytes)
     {
         var fileSizeInBytes = fileStream.Length;
-        var threadsCount = (int)fileSizeInBytes / segmentSizeInBytes;
-        var lastSizeInBytes = fileSizeInBytes % segmentSizeInBytes;
-        if (lastSizeInBytes > 0) threadsCount++;
-        
-        for (var i = 0; i < threadsCount; i++)
-        {
-            var offset = i * (int)segmentSizeInBytes;
-            var bytesCount = i + 1 == threadsCount
-                ? lastSizeInBytes
-                : segmentSizeInBytes;
-            var thread = new Thread(() => ComputeSha256(fileStream, offset, (int)bytesCount))
-            {
-                Name = $"{i + 1}"
-            };
-            threadList.Add(thread);
 
-            thread.Start();
+        var optimalThreadsCount = Environment.ProcessorCount / 2;
+        var segmentsCount = fileSizeInBytes / segmentSizeInBytes;
+        var requiredThreadsCount = Math.Min(optimalThreadsCount, segmentsCount);
+        var segmentsPerThread = segmentsCount / requiredThreadsCount;
+        var segmentsRemnant = segmentsCount % requiredThreadsCount;
+
+        for (var i = 1; i <= requiredThreadsCount; i++)
+        {
+             var thread = new Thread(() => ComputeSha256(fileStream,
+                 (int)segmentSizeInBytes, segmentsPerThread, segmentsRemnant))
+             {
+                 Name = $"{i}"
+             };
+             threadList.Add(thread);
+             
+             thread.Start();
         }
     }
 
-    private static void ComputeSha256(FileStream fileStream, int offset, int bytesCount)
+    private static void ComputeSha256(FileStream fileStream, int bytesCount, long segmentsPerThread,
+        long segmentsRemnant)
     {
         lock (fileStream)
         {
-            var buffer = new byte[bytesCount];
-            var threadNumber = Thread.CurrentThread.Name;
+            var currentThreadNumber = Thread.CurrentThread.Name!.ToInt();
+            var segmentsForCurrentThread = currentThreadNumber <= segmentsRemnant
+                ? segmentsPerThread + 1
+                : segmentsPerThread;
 
-            try
+            var firstSegmentNumber = currentThreadNumber <= segmentsRemnant
+                ? currentThreadNumber * segmentsForCurrentThread - segmentsPerThread
+                : currentThreadNumber * segmentsForCurrentThread + segmentsRemnant;
+
+            foreach (var additionNumber in Enumerable.Range(0, (int)segmentsForCurrentThread))
             {
-                fileStream.Position = offset;
-                var readBytes = fileStream.Read(buffer, 0, bytesCount);
-                if (readBytes <= 0) return;
-                var hash = SHA256.HashData(buffer);
-                Console.WriteLine($"Сегмент #{threadNumber}, хэш: {ToHexHashString(hash)}");
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Расчет сегмента #{threadNumber} завершился с ошибкой: {e}");
-                Console.WriteLine($"Stack trace: {e.StackTrace}");
-            }
-            finally
-            {
-                Console.WriteLine();
+                var currentSegmentNumber = firstSegmentNumber + additionNumber;
+
+                var buffer = new byte[bytesCount];
+
+                try
+                {
+                    fileStream.Position = (currentSegmentNumber - 1) * bytesCount;
+                    var readBytes = fileStream.Read(buffer, 0, bytesCount);
+                    if (readBytes <= 0) return;
+                    var hash = SHA256.HashData(buffer);
+                    Console.WriteLine($"Сегмент #{currentSegmentNumber}, хэш: {ToHexHashString(hash)}");
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Расчет сегмента #{currentSegmentNumber} завершился с ошибкой: {e}");
+                    Console.WriteLine($"Stack trace: {e.StackTrace}");
+                }
+                finally
+                {
+                    Console.WriteLine();
+                }
             }
         }
     }
