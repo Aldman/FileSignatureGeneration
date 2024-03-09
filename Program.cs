@@ -1,4 +1,4 @@
-﻿using FileSignatureGeneration.Utils;
+﻿using FileSignatureGeneration.SegmentGeneration;
 
 namespace FileSignatureGeneration
 {

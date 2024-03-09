@@ -1,4 +1,6 @@
-﻿namespace FileSignatureGeneration.Utils;
+﻿using FileSignatureGeneration.Utils;
+
+namespace FileSignatureGeneration.SegmentGeneration;
 
 internal class SegmentGenerationData
 {
