@@ -24,7 +24,9 @@ internal static class SegmentGenerator
         FillSegmentTuples(fileStream);
 
         while (!SegmentTuples.IsEmpty)
-            Thread.Sleep(7);
+        {
+            Thread.Sleep(100);
+        }
         
         Console.WriteLine("Программа завершена");
     }
@@ -44,29 +46,29 @@ internal static class SegmentGenerator
                 {
                     Thread.Sleep(7);
                     if (Sw.Elapsed.Seconds >= timeoutInSec)
-                        return;
+                        break;
+                    
                     continue;
                 }
-                
-                Sw.Reset();
 
                 if (_currentCalculationThreadCount < _necessaryCalculationThreadsCount)
-                    CalculateSegmentHashInNewThread();
+                    TryCalculateSegmentHashInNewThread();
 
                 if (oldQueueCount > SegmentTuples.Count)
-                    _currentCalculationThreadCount--;
+                    _currentCalculationThreadCount = oldQueueCount - SegmentTuples.Count;
             }
         });
         checkQueueThread.Start();
     }
 
-    private static void CalculateSegmentHashInNewThread()
+    private static void TryCalculateSegmentHashInNewThread()
     {
         var calculationThread = new Thread(() =>
         {
             var success = SegmentTuples.TryDequeue(out var segmentTuple);
             if (!success) return;
 
+            Sw.Reset();
             TryDoActionWithSegment(() =>
                 {
                     var hash = SHA256.HashData(segmentTuple.Data);
