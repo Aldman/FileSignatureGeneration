@@ -8,7 +8,7 @@ internal class SegmentGenerationData
     
     public long SegmentSizeInBytes { get; private set; }
     
-    public Lazy<FileStream> FileStream => new(File.Open(FilePath, FileMode.Open));
+    public FileStream FileStream => File.Open(FilePath, FileMode.Open);
 
     public static SegmentGenerationData GetInputDataFromUser()
     {

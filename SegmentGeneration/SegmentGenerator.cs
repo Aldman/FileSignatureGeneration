@@ -16,7 +16,7 @@ internal static class SegmentGenerator
     
     internal static void RunSegmentGeneration(SegmentGenerationData data)
     {
-        using var fileStream = data.FileStream.Value;
+        using var fileStream = data.FileStream;
         SegmentInfo.SegmentSizeInBytes = data.SegmentSizeInBytes;
 
         CheckQueueAndCalculateHashInBackgroundThreads();
