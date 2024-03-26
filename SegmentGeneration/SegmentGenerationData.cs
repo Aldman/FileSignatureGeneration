@@ -14,8 +14,8 @@ internal class SegmentGenerationData
     {
         return new SegmentGenerationData
         {
-            FilePath = ConsoleDataGetter.FilePath,
-            SegmentSizeInBytes = ConsoleDataGetter.SegmentSizeInBytes
+            FilePath = ConsoleDataGetter.GetFilePath(),
+            SegmentSizeInBytes = ConsoleDataGetter.GetSegmentSizeInBytes()
         };
     }
 }
