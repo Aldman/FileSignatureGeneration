@@ -8,18 +8,42 @@ internal static class SegmentGenerator
     {
         using var fileStream = data.FileStream;
         
-        var threadsCount = GetOptimalThreadsCount();
-        var threadPool = new ThreadPool(threadsCount);
-
         var segmentInfo = GetSegmentInfo(fileStream, data.SegmentSizeInBytes);
-        GenerateSegments(fileStream, segmentInfo, threadPool);
+        var generationTasks = GetGenerateSegmentsTasks(fileStream, segmentInfo);
 
-        while (!threadPool.IsIdle)
-        {
-            Thread.Sleep(100);
-        }
+        Task.WaitAll(generationTasks.ToArray());
         
         Console.WriteLine("Программа завершена");
+    }
+
+    private static List<Task> GetGenerateSegmentsTasks(FileStream fileStream, SegmentInfo segmentInfo)
+    {
+        var tasks = new List<Task>();
+        
+        for (var i = 1; i <= segmentInfo.SegmentsCount; i++)
+        {
+            var buffer = new byte[segmentInfo.SegmentSizeInBytes];
+            var readBytesCount = i == segmentInfo.SegmentsCount
+                ? segmentInfo.LastSegmentSize
+                : (int)segmentInfo.SegmentSizeInBytes;
+
+            var segmentNumber = i;
+            try
+            {
+                var readBytes = fileStream.Read(buffer, 0, readBytesCount);
+                if (readBytes <= 0) return tasks;
+                    
+                var task = Task.Run(() => Console.WriteLine($"Сегмент #{segmentNumber}, хэш: {buffer.ToHexString()}"));
+                tasks.Add(task);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"Расчет сегмента #{segmentNumber} завершился с ошибкой: {e}");
+                Console.WriteLine($"Stack trace: {e.StackTrace}");
+            }
+        }
+
+        return tasks;
     }
 
     private static SegmentInfo GetSegmentInfo(FileStream fileStream, long segmentSizeInBytes)
@@ -32,31 +56,5 @@ internal static class SegmentGenerator
         if (lastSegmentSize > 0) segmentsCount++;
 
         return new SegmentInfo(segmentsCount, segmentSizeInBytes, lastSegmentSize);
-    }
-
-    private static int GetOptimalThreadsCount() => Environment.ProcessorCount / 2;
-
-    private static void GenerateSegments(FileStream fileStream, SegmentInfo segmentInfo, ThreadPool threadPool)
-    {
-        for (var i = 1; i <= segmentInfo.SegmentsCount; i++)
-        {
-            var buffer = new byte[segmentInfo.SegmentSizeInBytes];
-            var readBytesCount = i == segmentInfo.SegmentsCount
-                ? segmentInfo.LastSegmentSize
-                : (int)segmentInfo.SegmentSizeInBytes;
-
-            var segmentNumber = i;
-            try
-            {
-                var readBytes = fileStream.Read(buffer, 0, readBytesCount);
-                if (readBytes >= 0)
-                    threadPool.Run(() => Console.WriteLine($"Сегмент #{segmentNumber}, хэш: {buffer.ToHexString()}"));
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Расчет сегмента #{segmentNumber} завершился с ошибкой: {e}");
-                Console.WriteLine($"Stack trace: {e.StackTrace}");
-            }
-        }
     }
 }
