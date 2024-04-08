@@ -1,29 +1,20 @@
-﻿using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Security.Cryptography;
-using FileSignatureGeneration.Extensions;
+﻿using FileSignatureGeneration.Extensions;
 
 namespace FileSignatureGeneration.SegmentGeneration;
 
 internal static class SegmentGenerator
 {
-    private static int _necessaryCalculationThreadsCount;
-    private static int _currentCalculationThreadCount;
-    
-    private static readonly ConcurrentQueue<(int SegmentNumber, byte[] Data)> SegmentTuples = new();
-    private static readonly SegmentInfo SegmentInfo = new();
-    private static readonly Stopwatch Sw = new();
-    
     internal static void RunSegmentGeneration(SegmentGenerationData data)
     {
         using var fileStream = data.FileStream;
-        SegmentInfo.SegmentSizeInBytes = data.SegmentSizeInBytes;
+        
+        var threadsCount = GetOptimalThreadsCount();
+        var threadPool = new ThreadPool(threadsCount);
 
-        CheckQueueAndCalculateHashInBackgroundThreads();
-        InitialiseFields(fileStream);
-        FillSegmentTuples(fileStream);
+        var segmentInfo = GetSegmentInfo(fileStream, data.SegmentSizeInBytes);
+        GenerateSegments(fileStream, segmentInfo, threadPool);
 
-        while (!SegmentTuples.IsEmpty)
+        while (!threadPool.IsIdle)
         {
             Thread.Sleep(100);
         }
@@ -31,102 +22,52 @@ internal static class SegmentGenerator
         Console.WriteLine("Программа завершена");
     }
 
-    private static void CheckQueueAndCalculateHashInBackgroundThreads()
-    {
-        const int timeoutInSec = 5;
-        Sw.Start();
-        
-        var checkQueueThread = new Thread(() =>
-        {
-            while (true)
-            {
-                var oldQueueCount = SegmentTuples.Count;
-                
-                if (SegmentTuples.IsEmpty)
-                {
-                    Thread.Sleep(7);
-                    if (Sw.Elapsed.Seconds >= timeoutInSec)
-                        break;
-                    
-                    continue;
-                }
-
-                if (_currentCalculationThreadCount < _necessaryCalculationThreadsCount)
-                    TryCalculateSegmentHashInNewThread();
-
-                if (oldQueueCount > SegmentTuples.Count)
-                    _currentCalculationThreadCount = oldQueueCount - SegmentTuples.Count;
-            }
-        });
-        checkQueueThread.Start();
-    }
-
-    private static void TryCalculateSegmentHashInNewThread()
-    {
-        var calculationThread = new Thread(() =>
-        {
-            var success = SegmentTuples.TryDequeue(out var segmentTuple);
-            if (!success) return;
-
-            Sw.Reset();
-            TryDoActionWithSegment(() =>
-                {
-                    var hash = SHA256.HashData(segmentTuple.Data);
-                    _currentCalculationThreadCount++;
-                    Console.WriteLine($"Сегмент #{segmentTuple.SegmentNumber}, хэш: {hash.ToHexString()}");
-                },
-                segmentTuple.SegmentNumber);
-        });
-        calculationThread.Start();
-    }
-
-    private static void InitialiseFields(FileStream fileStream)
+    private static SegmentInfo GetSegmentInfo(FileStream fileStream, long segmentSizeInBytes)
     {
         var fileSizeInBytes = fileStream.Length;
 
-        var optimalThreadsCount = Environment.ProcessorCount / 2;
-        SegmentInfo.SegmentsCount = (int)(fileSizeInBytes / SegmentInfo.SegmentSizeInBytes);
-        _necessaryCalculationThreadsCount = Math.Min(optimalThreadsCount, SegmentInfo.SegmentsCount);
+        var segmentsCount = (int)(fileSizeInBytes / segmentSizeInBytes);
         
-        SegmentInfo.LastSegmentSize = (int)(fileSizeInBytes % SegmentInfo.SegmentSizeInBytes);
-        if (SegmentInfo.LastSegmentSize > 0) SegmentInfo.SegmentsCount++;
+        var lastSegmentSize = (int)(fileSizeInBytes % segmentSizeInBytes);
+        if (lastSegmentSize > 0) segmentsCount++;
+
+        return new SegmentInfo(segmentsCount, segmentSizeInBytes, lastSegmentSize);
     }
 
-    private static void FillSegmentTuples(FileStream fileStream)
-    {
-        for (var i = 1; i <= SegmentInfo.SegmentsCount; i++)
-        {
-            var buffer = new byte[SegmentInfo.SegmentSizeInBytes];
-            var readBytesCount = i == SegmentInfo.SegmentsCount
-                ? SegmentInfo.LastSegmentSize
-                : (int)SegmentInfo.SegmentSizeInBytes;
-            
-            var endStream = false;
+    private static int GetOptimalThreadsCount() => Environment.ProcessorCount / 2;
 
-            TryDoActionWithSegment(() =>
+    private static void GenerateSegments(FileStream fileStream, SegmentInfo segmentInfo, ThreadPool threadPool)
+    {
+        for (var i = 1; i <= segmentInfo.SegmentsCount; i++)
+        {
+            var buffer = new byte[segmentInfo.SegmentSizeInBytes];
+            var readBytesCount = i == segmentInfo.SegmentsCount
+                ? segmentInfo.LastSegmentSize
+                : (int)segmentInfo.SegmentSizeInBytes;
+
+            var segmentNumber = i;
+            threadPool.Run(() =>
             {
-                var readBytes = fileStream.Read(buffer, 0, readBytesCount);
-                if (readBytes <= 0) endStream = true;
-            },
-                i);
-            if (endStream) return;
-            
-            SegmentTuples.Enqueue((i, buffer));
+                lock (fileStream)
+                {
+                    ReadSegment(fileStream, buffer, readBytesCount, segmentNumber);
+                }
+            });
         }
     }
 
-    private static bool TryDoActionWithSegment(Action action, int segment)
+    private static void ReadSegment(FileStream fileStream, byte[] buffer, int readBytesCount, int segmentNumber)
     {
         try
         {
-            action.Invoke();
-            return true;
+            var readBytes = fileStream.Read(buffer, 0, readBytesCount);
+            if (readBytes >= 0)
+                Console.WriteLine($"Сегмент #{segmentNumber}, хэш: {buffer.ToHexString()}");
         }
         catch (Exception e)
         {
-            Console.WriteLine($"Расчет сегмента #{segment} завершился с ошибкой: {e}");
+            Console.WriteLine($"Расчет сегмента #{segmentNumber} завершился с ошибкой: {e}");
             Console.WriteLine($"Stack trace: {e.StackTrace}");
-            return false;
         }
     }
 }
