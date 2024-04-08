@@ -46,28 +46,17 @@ internal static class SegmentGenerator
                 : (int)segmentInfo.SegmentSizeInBytes;
 
             var segmentNumber = i;
-            threadPool.Run(() =>
+            try
             {
-                lock (fileStream)
-                {
-                    ReadSegment(fileStream, buffer, readBytesCount, segmentNumber);
-                }
-            });
-        }
-    }
-
-    private static void ReadSegment(FileStream fileStream, byte[] buffer, int readBytesCount, int segmentNumber)
-    {
-        try
-        {
-            var readBytes = fileStream.Read(buffer, 0, readBytesCount);
-            if (readBytes >= 0)
-                Console.WriteLine($"Сегмент #{segmentNumber}, хэш: {buffer.ToHexString()}");
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine($"Расчет сегмента #{segmentNumber} завершился с ошибкой: {e}");
-            Console.WriteLine($"Stack trace: {e.StackTrace}");
+                var readBytes = fileStream.Read(buffer, 0, readBytesCount);
+                if (readBytes >= 0)
+                    threadPool.Run(() => Console.WriteLine($"Сегмент #{segmentNumber}, хэш: {buffer.ToHexString()}"));
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"Расчет сегмента #{segmentNumber} завершился с ошибкой: {e}");
+                Console.WriteLine($"Stack trace: {e.StackTrace}");
+            }
         }
     }
 }
